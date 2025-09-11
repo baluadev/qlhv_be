@@ -1,4 +1,4 @@
-// import * as functions from "firebase-functions";
+import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 // import { FieldValue } from "firebase-admin/firestore";
 import express, { Request, Response } from "express";
@@ -10,7 +10,43 @@ const db = admin.firestore();
 
 const app = express();
 app.use(cors({ origin: true }));
+// Middleware để xử lý JSON
+app.use(express.json({ limit: "50mb" }));
+
+// Export express app as a Firebase Function với cấu hình timeout và bộ nhớ
+export const api = functions.https.onRequest(
+  {
+    timeoutSeconds: 540, // Tối đa 9 phút
+    memory: "1GiB", // Tăng bộ nhớ nếu cần
+  },
+  app
+);
+
 app.use(express.json());
+
+function generateKeywords(text: string): string[] {
+  if (!text) return [];
+  text = text.toLowerCase().trim();
+
+  const keywords: string[] = [];
+
+  // Cắt theo từ (ví dụ: "pham ngoc tam")
+  const parts = text.split(/\s+/);
+
+  // Thêm từng từ đầy đủ
+  keywords.push(...parts);
+
+  // Thêm các prefix để search theo "startsWith"
+  for (const part of parts) {
+    let prefix = "";
+    for (const char of part) {
+      prefix += char;
+      keywords.push(prefix); // p, ph, pha, pham...
+    }
+  }
+
+  return Array.from(new Set(keywords)); // loại trùng
+}
 
 app.post("/login", async (req: Request, res: Response) => {
   try {
@@ -74,10 +110,23 @@ app.post("/profile/add", async (req: Request, res: Response) => {
         .json({ success: false, message: "Thiếu userId hoặc profile" });
     }
 
-    // Thêm userId vào profile
-    profile.userId = userId;
+    // Tạo keywords từ các field cần search
+    const keywords = [
+      ...generateKeywords(profile.hovaten),
+      ...generateKeywords(profile.sdt),
+      ...generateKeywords(profile.cccd),
+      ...generateKeywords(profile.diachi),
+    ];
 
-    const docRef = await db.collection("profiles").add(profile);
+    // Thêm userId vào profile
+    const newProfile = {
+      ...profile,
+      userId,
+      keywords,
+      createdAt: new Date(),
+    };
+
+    const docRef = await db.collection("profiles").add(newProfile);
 
     return res.status(200).json({
       success: true,
@@ -122,24 +171,13 @@ app.get("/profile/search/:userId", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Thiếu keyword" });
     }
 
-    // ⚡ Firestore không hỗ trợ OR search trực tiếp, nên phải query nhiều field và gộp kết quả
-    const results: any[] = [];
+    const snapshot = await db
+      .collection("profiles")
+      .where("userId", "==", userId)
+      .where("keywords", "array-contains", (keyword as string).toLowerCase())
+      .get();
 
-    const fields = ["hovaten", "sdt", "cccd", "diachi"];
-    for (const field of fields) {
-      const snapshot = await db
-        .collection("profiles")
-        .where("userId", "==", userId)
-        .where(field, "==", keyword) // hoặc ">= keyword" + "<= keyword + \uf8ff" nếu muốn LIKE search
-        .get();
-
-      snapshot.docs.forEach((doc) => {
-        const data = { id: doc.id, ...doc.data() };
-        if (!results.find((r) => r.id === data.id)) {
-          results.push(data);
-        }
-      });
-    }
+    const results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
     return res.status(200).json({ success: true, results });
   } catch (error) {
