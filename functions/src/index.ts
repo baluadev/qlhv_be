@@ -132,7 +132,7 @@ app.post("/profile/add", async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: "Thêm profile thành công",
-      id: docRef.id,
+      profileId: docRef.id,
     });
   } catch (error) {
     console.error("Add profile error:", error);
@@ -151,9 +151,10 @@ app.get("/profile/:userId", async (req: Request, res: Response) => {
       .get();
 
     const profiles = snapshot.docs.map((doc) => ({
-      id: doc.id,
+      profileId: doc.id,
       ...doc.data(),
     }));
+    console.log(profiles);
 
     return res.status(200).json({success: true, profiles});
   } catch (error) {
@@ -163,7 +164,7 @@ app.get("/profile/:userId", async (req: Request, res: Response) => {
 });
 
 // Lấy chi tiết 1 profile theo profileId
-app.get("/profile/`detail`/:profileId", async (req: Request, res: Response) => {
+app.get("/profile/detail/:profileId", async (req: Request, res: Response) => {
   try {
     const {profileId} = req.params;
 
@@ -183,7 +184,7 @@ app.get("/profile/`detail`/:profileId", async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      profile: {id: docRef.id, ...docRef.data()},
+      profile: {profileId: docRef.id, ...docRef.data()},
     });
   } catch (error) {
     console.error("Get profile detail error:", error);
@@ -249,8 +250,8 @@ app.get("/profile/search/:userId", async (req: Request, res: Response) => {
       .where("keywords", "array-contains", (keyword as string).toLowerCase())
       .get();
 
-    const results = snapshot.docs.map((doc) => ({id: doc.id, ...doc.data()}));
-
+    const results = snapshot.docs.map((doc) => ({profileId: doc.id, ...doc.data()}));
+ console.log(results);
     return res.status(200).json({success: true, results});
   } catch (error) {
     console.error("Search profile error:", error);
